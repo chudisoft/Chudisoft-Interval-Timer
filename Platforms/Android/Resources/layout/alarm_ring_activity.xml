@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:padding="24dp"
+    android:background="#0a1323">
+
+    <TextView
+        android:id="@+id/alarmTitleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Alarm"
+        android:textColor="#ffffff"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="It is time to wake up"
+        android:textColor="#dfeeff"
+        android:textSize="18sp"
+        android:layout_marginBottom="32dp"/>
+
+    <Button
+        android:id="@+id/dismissAlarmButton"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:text="Dismiss alarm"
+        android:textAllCaps="false"
+        android:textSize="18sp"
+        android:backgroundTint="#2d6cdf"/>
+</LinearLayout>

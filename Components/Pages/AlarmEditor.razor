@@ -1,0 +1,503 @@
+
+@page "/alarm/editor"
+@page "/alarm/editor/{AlarmId:guid}"
+
+@using AlarmCore.Models
+@using AlarmCore.Services
+
+@inject IAlarmRepository Repository
+@inject AlarmSchedulerService Scheduler
+@inject NavigationManager Navigation
+
+<PageTitle>@(_editing ? "Edit Alarm" : "Create Alarm") | Chudisoft</PageTitle>
+
+<div class="editor-shell">
+    <header class="editor-header">
+        <button class="btn btn-quiet editor-back"
+                type="button"
+                @onclick="Cancel">
+            <span aria-hidden="true">←</span>
+            Back to alarms
+        </button>
+
+        <div class="brand-label">
+            <span class="brand-mark">◷</span>
+            <span>CHUDISOFT · INTERVAL TIMER</span>
+        </div>
+
+        <h1 class="editor-heading">
+            @(_editing ? "Edit alarm" : "Create alarm")
+        </h1>
+
+        <p class="editor-subtitle">
+            @(_editing
+                ? "Update your alarm and adjust its schedule."
+                : "Set a reminder that works around your day.")
+        </p>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="error-box" role="alert">
+            <strong>Something needs your attention.</strong>
+            <div>@_error</div>
+        </div>
+    }
+
+    <div class="editor-form">
+        <section class="form-section">
+            <div class="section-heading">
+                <h2>01. Alarm details</h2>
+                <p>Give your alarm a name and choose how it repeats.</p>
+            </div>
+
+            <div class="form-grid">
+                <label class="form-field full-width">
+                    <span class="field-label">Alarm name</span>
+                    <input class="field-input"
+                           type="text"
+                           placeholder="e.g. Hourly reminder"
+                           maxlength="100"
+                           @bind="_model.Name" />
+                    <span class="field-hint">
+                        Use a name that helps you recognize this alarm.
+                    </span>
+                </label>
+
+                <label class="form-field">
+                    <span class="field-label">Alarm type</span>
+                    <select class="field-input"
+                            @bind="_model.Type">
+                        <option value="@AlarmType.OneTime">One-time</option>
+                        <option value="@AlarmType.Daily">Daily</option>
+                        <option value="@AlarmType.RecurringHourly">Recurring hourly</option>
+                    </select>
+                </label>
+
+                @if (_model.Type == AlarmType.RecurringHourly)
+                {
+                    <div class="form-field minute-field">
+                        <span class="field-label">Minute past each hour</span>
+
+                        <div class="minute-input-row">
+                            <input class="field-input"
+                                   type="number"
+                                   min="0"
+                                   max="59"
+                                   inputmode="numeric"
+                                   @bind="_model.MinuteOfHour" />
+
+                            <span class="minute-suffix">
+                                :MM
+                            </span>
+                        </div>
+
+                        <p class="field-hint">
+                            Choose a minute from 0 to 59.
+                        </p>
+                    </div>
+
+                    <div class="minute-example form-field full-width">
+                        <strong>Example:</strong>
+                        Setting this to 27 means 8:27, 9:27, and 10:27,
+                        within your configured schedule.
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="form-section">
+            <div class="section-heading">
+                <h2>02. Schedule</h2>
+                <p>Choose when the alarm is allowed to occur.</p>
+            </div>
+
+            <div class="form-grid">
+                <label class="form-field">
+                    <span class="field-label">Start time</span>
+                    <input class="field-input"
+                           type="time"
+                           value="@_model.StartTime.ToString(@"hh\:mm")"
+                           @onchange="OnStartTimeChanged" />
+                    <span class="field-hint">Beginning of the allowed period.</span>
+                </label>
+
+                <label class="form-field">
+                    <span class="field-label">End time</span>
+                    <input class="field-input"
+                           type="time"
+                           value="@_model.EndTime.ToString(@"hh\:mm")"
+                           @onchange="OnEndTimeChanged" />
+                    <span class="field-hint">End of the allowed period.</span>
+                </label>
+
+                <label class="form-field">
+                    <span class="field-label">Start date</span>
+                    <input class="field-input"
+                           type="date"
+                           @bind="_startDate" />
+                </label>
+
+                <label class="form-field">
+                    <span class="field-label">End date</span>
+                    <input class="field-input"
+                           type="date"
+                           @bind="_endDate" />
+                    <span class="field-hint">Last date the schedule is active.</span>
+                </label>
+
+                <div class="form-field full-width">
+                    <div class="days-box">
+                        <span class="field-label">Repeat on</span>
+                        <span class="field-hint">
+                            Select the days when this alarm should be active.
+                        </span>
+
+                        <div class="days-grid">
+                            @foreach (var day in _days)
+                            {
+                                var flag = day.Flag;
+                                var selected = _selectedDays.Contains(flag);
+
+                                <button @key="day.Flag"
+                                        type="button"
+                                        class="day-button @(selected ? "selected" : "")"
+                                        aria-pressed="@selected"
+                                        @onclick="() => ToggleDay(flag)">
+                                    @day.Label
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="form-section">
+            <div class="section-heading">
+                <h2>03. Alarm preferences</h2>
+                <p>Choose how your reminder should behave.</p>
+            </div>
+
+            <div class="settings-list">
+                <label class="setting-row">
+                    <span class="setting-copy">
+                        <span class="setting-title">Alarm enabled</span>
+                        <span class="setting-description">
+                            Activate this schedule after saving.
+                        </span>
+                    </span>
+
+                    <span class="switch">
+                        <input type="checkbox"
+                               aria-label="Alarm enabled"
+                               @bind="_model.Enabled" />
+                        <span class="switch-track"></span>
+                    </span>
+                </label>
+
+                <label class="setting-row">
+                    <span class="setting-copy">
+                        <span class="setting-title">Sound</span>
+                        <span class="setting-description">
+                            Play the configured alarm sound.
+                        </span>
+                    </span>
+
+                    <span class="switch">
+                        <input type="checkbox"
+                               aria-label="Alarm sound enabled"
+                               @bind="_model.SoundEnabled" />
+                        <span class="switch-track"></span>
+                    </span>
+                </label>
+
+                <label class="setting-row">
+                    <span class="setting-copy">
+                        <span class="setting-title">Vibration</span>
+                        <span class="setting-description">
+                            Vibrate when the alarm occurs, where supported.
+                        </span>
+                    </span>
+
+                    <span class="switch">
+                        <input type="checkbox"
+                               aria-label="Alarm vibration enabled"
+                               @bind="_model.VibrateEnabled" />
+                        <span class="switch-track"></span>
+                    </span>
+                </label>
+            </div>
+        </section>
+
+        <section class="summary-box">
+            <h3>◷ Schedule summary</h3>
+
+            <p class="summary-text">
+                @_model.GetScheduleSummary()
+            </p>
+
+            @if (_model.Type == AlarmType.RecurringHourly)
+            {
+                <div class="preview">
+                    <h4>Upcoming occurrences</h4>
+
+                    @if (_preview.Count == 0)
+                    {
+                        <p class="field-hint">
+                            No upcoming occurrences could be calculated
+                            for the current configuration.
+                        </p>
+                    }
+                    else
+                    {
+                        <ul class="preview-list">
+                            @foreach (var occurrence in _preview)
+                            {
+                                <li @key="occurrence">
+                                    @occurrence.ToLocalTime().ToString("ddd, MMM d · hh:mm tt")
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </section>
+
+        <div class="actions-row">
+            <button class="btn btn-secondary"
+                    type="button"
+                    @onclick="Cancel">
+                Cancel
+            </button>
+
+            <button class="btn btn-primary"
+                    type="button"
+                    @onclick="Save">
+                <span aria-hidden="true">✓</span>
+                @(_editing ? "Save changes" : "Create alarm")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Guid? AlarmId { get; set; }
+
+    private AlarmModel _model = new();
+    private DateTime? _startDate;
+    private DateTime? _endDate;
+
+    private readonly List<(DayOfWeekFlags Flag, string Label)> _days = new()
+    {
+        (DayOfWeekFlags.Sunday, "Sun"),
+        (DayOfWeekFlags.Monday, "Mon"),
+        (DayOfWeekFlags.Tuesday, "Tue"),
+        (DayOfWeekFlags.Wednesday, "Wed"),
+        (DayOfWeekFlags.Thursday, "Thu"),
+        (DayOfWeekFlags.Friday, "Fri"),
+        (DayOfWeekFlags.Saturday, "Sat")
+    };
+
+    private List<DayOfWeekFlags> _selectedDays = new();
+    private List<DateTime> _preview = new();
+
+    private string _error = string.Empty;
+    private bool _editing;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _editing = AlarmId.HasValue;
+
+        if (_editing)
+        {
+            var existing = await Repository.GetByIdAsync(AlarmId!.Value);
+
+            if (existing is not null)
+            {
+                _model = existing;
+            }
+        }
+
+        _startDate = _model.StartDate ?? DateTime.Today;
+        _endDate = _model.EndDate ?? DateTime.Today.AddDays(30);
+
+        _selectedDays = GetSelectedDayFlags(_model.ActiveDays);
+
+        _preview = BuildPreview();
+    }
+
+    private void OnStartTimeChanged(ChangeEventArgs e)
+    {
+        if (TimeSpan.TryParse(e.Value?.ToString(), out var value))
+        {
+            _model.StartTime = value;
+            RefreshPreview();
+        }
+    }
+
+    private void OnEndTimeChanged(ChangeEventArgs e)
+    {
+        if (TimeSpan.TryParse(e.Value?.ToString(), out var value))
+        {
+            _model.EndTime = value;
+            RefreshPreview();
+        }
+    }
+
+    private void ToggleDay(DayOfWeekFlags flag)
+    {
+        if (_selectedDays.Contains(flag))
+        {
+            _selectedDays.Remove(flag);
+        }
+        else
+        {
+            _selectedDays.Add(flag);
+        }
+
+        _model.ActiveDays = _selectedDays.Aggregate(
+            DayOfWeekFlags.None,
+            (acc, current) => acc | current);
+
+        RefreshPreview();
+    }
+
+    private void RefreshPreview()
+    {
+        _preview = BuildPreview();
+        _error = string.Empty;
+    }
+
+    private List<DateTime> BuildPreview()
+    {
+        if (_model.Type != AlarmType.RecurringHourly)
+        {
+            return new();
+        }
+
+        var cursor = DateTime.UtcNow.AddMinutes(1);
+
+        return AlarmOccurrenceCalculator.GetOccurrences(
+            _model,
+            cursor,
+            10);
+    }
+
+    private List<DayOfWeekFlags> GetSelectedDayFlags(
+        DayOfWeekFlags activeDays)
+    {
+        var result = new List<DayOfWeekFlags>();
+
+        foreach (var day in _days)
+        {
+            if (activeDays.HasFlag(day.Flag))
+            {
+                result.Add(day.Flag);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task Save1()
+    {
+        _error = string.Empty;
+
+        if (_model.Type == AlarmType.RecurringHourly &&
+            (_model.MinuteOfHour < 0 || _model.MinuteOfHour > 59))
+        {
+            _error = "Minute of hour must be between 0 and 59.";
+            return;
+        }
+
+        if (_selectedDays.Count == 0)
+        {
+            _error = "Select at least one day of the week.";
+            return;
+        }
+
+        if (_startDate.HasValue &&
+            _endDate.HasValue &&
+            _endDate.Value.Date < _startDate.Value.Date)
+        {
+            _error = "The end date cannot be earlier than the start date.";
+            return;
+        }
+
+        if (_model.Type == AlarmType.RecurringHourly &&
+            _model.EndTime <= _model.StartTime)
+        {
+            _error =
+                "The end time must be later than the start time. " +
+                "Overnight schedules require explicit support in the scheduler.";
+            return;
+        }
+
+        _model.StartDate = _startDate;
+        _model.EndDate = _endDate;
+
+        _model.ActiveDays = _selectedDays.Aggregate(
+            DayOfWeekFlags.None,
+            (acc, current) => acc | current);
+
+        await Repository.SaveAsync(_model);
+
+        Scheduler.Schedule(_model);
+
+        Navigation.NavigateTo("/");
+    }
+
+        
+    private async Task Save()
+    {
+        _error = string.Empty;
+
+        if (_model.Type == AlarmType.RecurringHourly &&
+            (_model.MinuteOfHour < 0 || _model.MinuteOfHour > 59))
+        {
+            _error = "Minute of hour must be between 0 and 59.";
+            return;
+        }
+
+        if (_selectedDays.Count == 0)
+        {
+            _error = "Select at least one day of the week.";
+            return;
+        }
+
+        if (_startDate.HasValue &&
+            _endDate.HasValue &&
+            _endDate.Value.Date < _startDate.Value.Date)
+        {
+            _error = "The end date cannot be earlier than the start date.";
+            return;
+        }
+
+        _model.StartDate = _startDate;
+        _model.EndDate = _endDate;
+
+        if (_model.Type == AlarmType.RecurringHourly &&
+            _model.EndTime <= _model.StartTime)
+        {
+            _model.EndTime = _model.EndTime == default
+                ? TimeSpan.FromHours(23)
+                : _model.EndTime;
+        }
+
+        _model.ActiveDays = _selectedDays.Aggregate(
+            DayOfWeekFlags.None,
+            (acc, current) => acc | current);
+
+        await Repository.SaveAsync(_model);
+        Scheduler.Schedule(_model);
+        Navigation.NavigateTo("/");
+    }
+
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

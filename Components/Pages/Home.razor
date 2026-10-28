@@ -1,0 +1,332 @@
+﻿
+@page "/"
+
+@using AlarmCore.Models
+@using AlarmCore.Services
+@implements IDisposable
+
+@inject IAlarmRepository Repository
+@inject AlarmSchedulerService Scheduler
+@inject NavigationManager Navigation
+
+<PageTitle>Alarm Dashboard | Chudisoft</PageTitle>
+
+<div class="page-shell">
+    <header class="header-row">
+        <div class="header-copy">
+            <div class="brand-label">
+                <span class="brand-mark">◷</span>
+                <span>CHUDISOFT · INTERVAL TIMER</span>
+            </div>
+
+            <p class="header-date">
+                @_currentTime.ToString("dddd, MMMM d, yyyy")
+            </p>
+
+            <h1 class="clock-time">
+                @_currentTime.ToString("hh:mm:ss")
+                <span class="clock-period">
+                    @_currentTime.ToString("tt")
+                </span>
+            </h1>
+
+            <p class="header-subtitle">
+                Your time, organized your way.
+            </p>
+        </div>
+
+        <button class="btn btn-primary"
+                type="button"
+                @onclick="AddAlarm">
+            <span aria-hidden="true">＋</span>
+            Add Alarm
+        </button>
+    </header>
+
+    <section class="overview-grid" aria-label="Alarm overview">
+        <div class="overview-card is-total">
+            <p class="overview-label">Total alarms</p>
+            <p class="overview-value">@_alarms.Count</p>
+            <p class="overview-note">Configured schedules</p>
+        </div>
+
+        <div class="overview-card is-active">
+            <p class="overview-label">Active</p>
+            <p class="overview-value">@_alarms.Count(a => a.Enabled)</p>
+            <p class="overview-note">Ready to run</p>
+        </div>
+
+        <div class="overview-card">
+            <p class="overview-label">Paused</p>
+            <p class="overview-value">@_alarms.Count(a => !a.Enabled)</p>
+            <p class="overview-note">Currently disabled</p>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading">
+            <div>
+                <h2 class="panel-title">Your alarms</h2>
+                <p class="panel-description">
+                    Manage your reminders and recurring schedules.
+                </p>
+            </div>
+
+            <span class="count-badge">@_alarms.Count</span>
+        </div>
+
+        @if (_alarms.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-icon" aria-hidden="true">◷</div>
+
+                <h3>No alarms yet</h3>
+
+                <p>
+                    Create your first alarm to start managing your time
+                    with simple, recurring reminders.
+                </p>
+
+                <button class="btn btn-primary"
+                        type="button"
+                        @onclick="AddAlarm">
+                    ＋ Create your first alarm
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="alarm-list">
+                @foreach (var alarm in _alarms)
+                {
+                    <article class="alarm-card @(alarm.Enabled ? "enabled" : "disabled")"
+                             @key="alarm.Id">
+
+                        <div class="alarm-card-main">
+                            <div class="alarm-icon" aria-hidden="true">
+                                @(alarm.Type == AlarmType.RecurringHourly
+                                    ? "↻"
+                                    : alarm.Type == AlarmType.Daily
+                                        ? "◷"
+                                        : "◴")
+                            </div>
+
+                            <div class="alarm-details">
+                                <div class="alarm-title-row">
+                                    <h3 class="alarm-title">
+                                        @(string.IsNullOrWhiteSpace(alarm.Name)
+                                            ? "Untitled Alarm"
+                                            : alarm.Name)
+                                    </h3>
+
+                                    <span class="status-pill @(alarm.Enabled ? "" : "off")">
+                                        @(alarm.Enabled ? "● Active" : "Paused")
+                                    </span>
+                                </div>
+
+                                @if (alarm.Type == AlarmType.RecurringHourly)
+                                {
+                                    <div class="alarm-frequency">
+                                        Every hour at :@alarm.MinuteOfHour.ToString("D2")
+                                    </div>
+                                }
+
+                                <p class="alarm-meta">
+                                    <span>@GetTypeText(alarm)</span>
+                                    <span>·</span>
+                                    <span>@alarm.StartTime.ToString(@"hh\:mm") – @alarm.EndTime.ToString(@"hh\:mm")</span>
+                                </p>
+
+                                <p class="alarm-meta">
+                                    <span>@GetDayList(alarm)</span>
+
+                                    @if (alarm.StartDate.HasValue || alarm.EndDate.HasValue)
+                                    {
+                                        <span>·</span>
+                                        <span>
+                                            @alarm.StartDate?.ToString("MMM d, yyyy")
+                                            @if (alarm.EndDate.HasValue)
+                                            {
+                                                <text> – @alarm.EndDate.Value.ToString("MMM d, yyyy")</text>
+                                            }
+                                        </span>
+                                    }
+                                </p>
+
+                                <div class="alarm-next">
+                                    <strong>Next occurrence:</strong>
+                                    @GetNextOccurrenceText(alarm)
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alarm-card-actions">
+                            <label class="switch"
+                                   title="@(alarm.Enabled ? "Disable alarm" : "Enable alarm")">
+                                <input type="checkbox"
+                                       aria-label="@($"Enable {alarm.Name ?? "alarm"}")"
+                                       checked="@alarm.Enabled"
+                                       @onchange="(e) => ToggleAlarm(alarm, (bool)e.Value!)" />
+                                <span class="switch-track"></span>
+                            </label>
+
+                            <button class="btn btn-secondary"
+                                    type="button"
+                                    @onclick="() => EditAlarm(alarm.Id)">
+                                Edit
+                            </button>
+
+                            <button class="btn btn-danger"
+                                    type="button"
+                                    @onclick="() => DeleteAlarm(alarm.Id)">
+                                Delete
+                            </button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <footer style="padding: 18px 2px 0; color: var(--text-muted); font-size: 11px;">
+        Chudisoft Interval Timer
+        <span style="float: right;">Stay on schedule.</span>
+    </footer>
+</div>
+
+@code {
+    private List<AlarmModel> _alarms = new();
+    private DateTime _currentTime = DateTime.Now;
+
+    private readonly CancellationTokenSource _clockCts = new();
+    private Task? _clockTask;
+    private bool _disposed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _alarms = await Repository.GetAllAsync();
+
+        _clockTask = UpdateClockAsync(_clockCts.Token);
+    }
+
+    private async Task UpdateClockAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(() =>
+                {
+                    if (_disposed)
+                        return;
+
+                    _currentTime = DateTime.Now;
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the component is disposed.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The renderer may already be shutting down.
+        }
+    }
+
+    private async Task ToggleAlarm(AlarmModel alarm, bool enabled)
+    {
+        alarm.Enabled = enabled;
+
+        await Repository.SaveAsync(alarm);
+        Scheduler.Schedule(alarm);
+
+        _alarms = await Repository.GetAllAsync();
+    }
+
+    private void AddAlarm()
+    {
+        Navigation.NavigateTo("/alarm/editor");
+    }
+
+    private void EditAlarm(Guid id)
+    {
+        Navigation.NavigateTo($"/alarm/editor/{id}");
+    }
+
+    private async Task DeleteAlarm(Guid id)
+    {
+        await Repository.DeleteAsync(id);
+        _alarms = await Repository.GetAllAsync();
+    }
+
+    private static string GetTypeText(AlarmModel alarm)
+    {
+        return alarm.Type switch
+        {
+            AlarmType.OneTime => "One-time",
+            AlarmType.Daily => "Daily",
+            AlarmType.RecurringHourly => "Recurring hourly",
+            _ => "Alarm"
+        };
+    }
+
+    private static string GetDayList(AlarmModel alarm)
+    {
+        if (alarm.ActiveDays == DayOfWeekFlags.All)
+            return "Every day";
+
+        var days = new List<string>();
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Sunday))
+            days.Add("Sun");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Monday))
+            days.Add("Mon");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Tuesday))
+            days.Add("Tue");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Wednesday))
+            days.Add("Wed");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Thursday))
+            days.Add("Thu");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Friday))
+            days.Add("Fri");
+
+        if (alarm.ActiveDays.HasFlag(DayOfWeekFlags.Saturday))
+            days.Add("Sat");
+
+        return days.Count == 0 ? "No days selected" : string.Join(", ", days);
+    }
+
+    private static string GetNextOccurrenceText(AlarmModel alarm)
+    {
+        if (!alarm.Enabled)
+            return "Disabled";
+
+        var next = AlarmOccurrenceCalculator.GetNextOccurrence(
+            alarm,
+            DateTime.UtcNow);
+
+        return next.HasValue
+            ? next.Value.ToLocalTime().ToString("ddd, MMM d · hh:mm tt")
+            : "No upcoming occurrence";
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        _clockCts.Cancel();
+        _clockCts.Dispose();
+    }
+}
